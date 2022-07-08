@@ -12,11 +12,11 @@
 
 /*
     int             num_of_thread;         :    线程数量
-    pthread_t*      m_threads;             :    线程池数组
+    pthread_t*      threads;               :    线程池数组
     int             max_num_of_requests;   :    请求队列大小
-    std::queue<T*>  m_workqueue;           :    请求队列
-    locker          m_queuelocker;         :    互斥锁
-    sem             m_queuestat;           :    信号量，用于判断是否有任务需要处理
+    std::queue<T*>  workqueue;             :    请求队列
+    locker          queuelocker;           :    互斥锁
+    sem             queuestat;             :    信号量，用于判断是否有任务需要处理
     bool            is_need_stop;          :    是否结束线程
 */
 
@@ -24,36 +24,33 @@
 template <typename T>
 class threadpool {
 private:
-    int            num_of_thread;
-    pthread_t*     m_threads;
-    int            max_num_of_requests;
-    std::queue<T*> m_workqueue;
-    locker         m_queuelocker;
-    sem            m_queuestat;
-    bool           is_need_stop;
-
-private:
-    static void* worker(void*);
+    int               num_of_thread;
+    pthread_t*        threads;
+    long unsigned int max_num_of_conn;
+    std::queue<T*>    workqueue;
+    locker            queuelocker;
+    sem               queuestat;
+    bool              is_need_stop;
 
 public:
     threadpool(int num = 8, int max = 10000);
     ~threadpool();
+
+    static void* worker(void*);
+
     bool append(T*);
     void run();
 };
 
 template <typename T>
 threadpool<T>::threadpool(int num, int max)
-    : num_of_thread(num),
-      max_num_of_requests(max),
-      is_need_stop(false),
-      m_threads(nullptr) {
+    : num_of_thread(num), threads(nullptr), max_num_of_conn(max), is_need_stop(false) {
     if (num <= 0 || max <= 0) {
         throw std::exception();
     }
 
-    m_threads = new pthread_t[num_of_thread];
-    if (!m_threads) {
+    threads = new pthread_t[num_of_thread];
+    if (!threads) {
         throw std::exception();
     }
 
@@ -61,15 +58,15 @@ threadpool<T>::threadpool(int num, int max)
     for (int i = 0; i < num_of_thread; ++i) {
         printf("正在创建第 %d 个线程...\n", i);
         // worker必须是静态函数,传入this参数
-        int ret = pthread_create(i + m_threads, nullptr, worker, this);
+        int ret = pthread_create(i + threads, nullptr, worker, this);
         if (ret != 0) {
-            delete[] m_threads;
+            delete[] threads;
             throw std::exception();
         }
 
-        ret = pthread_detach(m_threads[i]);
+        ret = pthread_detach(threads[i]);
         if (ret != 0) {
-            delete[] m_threads;
+            delete[] threads;
             throw std::exception();
         }
     }
@@ -77,21 +74,21 @@ threadpool<T>::threadpool(int num, int max)
 
 template <typename T>
 threadpool<T>::~threadpool() {
-    delete[] m_threads;
+    delete[] threads;
     is_need_stop = true;
 }
 
 template <typename T>
-bool threadpool<T>::append(T* request) {
-    m_queuelocker.lock();
-    if (m_workqueue.size() >= max_num_of_requests) {
-        m_queuelocker.unlock();
+bool threadpool<T>::append(T* conn) {
+    queuelocker.lock();
+    if (workqueue.size() >= max_num_of_conn) {
+        queuelocker.unlock();
         return false;
     }
 
-    m_workqueue.push(request);
-    m_queuelocker.unlock();
-    m_queuestat.post();  // 信号量的V操作
+    workqueue.push(conn);
+    queuelocker.unlock();
+    queuestat.post();  // 信号量的V操作
     return true;
 }
 
@@ -107,25 +104,20 @@ void threadpool<T>::run() {
     // 线程池一旦对象析构，stop设置为true，所有子线程执行结束
     while (!is_need_stop) {
         // 先加锁后wait，如果wait阻塞了，那锁也不释放，造成死锁
-        m_queuestat.wait();  // 信号量的P操作
-        m_queuelocker.lock();
+        queuestat.wait();  // 信号量的P操作
+        queuelocker.lock();
 
-        // if (m_workqueue.empty()) {
-        //     m_queuelocker.unlock();
-        //     continue;
-        // }
+        T* conn = workqueue.front();
+        workqueue.pop();
+        queuelocker.unlock();
 
-        T* request = m_workqueue.front();
-        m_workqueue.pop();
-        m_queuelocker.unlock();
-
-        // 如果传进的request本身就是个null的话，必须要判断
-        if (!request) {
+        // 如果传进的连接conn本身就是个null的话，必须要判断
+        if (!conn) {
             continue;
         }
 
-        // process函数在httpconnection类
-        request->process();
+        // process函数在connection类
+        conn->process();
     }
 }
 

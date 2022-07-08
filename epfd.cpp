@@ -14,11 +14,16 @@ int set_fd_nonblock(int fd) {
     针对文件描述符，如果设置了oneshot，那么只会触发一次;
     防止一个线程在处理业务呢，然后来数据了，又从线程池里拿一个线程来处理新的业务;
 */
-void add_fd_to_epoll(int epollfd, int fd, bool one_shot) {
+void add_fd_to_epoll(int epollfd, int fd, bool one_shot, bool is_ET) {
     epoll_event event;
     event.data.fd = fd;
-    event.events  = EPOLLIN | EPOLLRDHUP;
-    // event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;  //边沿触发
+
+    if (!is_ET) {
+        event.events = EPOLLIN | EPOLLRDHUP;
+    } else {
+        event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;  //边沿触发
+    }
+
     if (one_shot) {
         // 防止同一个通信被不同线程处理
         event.events |= EPOLLONESHOT;
@@ -41,6 +46,7 @@ void remove_fd_from_epoll(int epollfd, int fd) {
 void modify_fd_from_epoll(int epollfd, int fd, int ev) {
     epoll_event event;
     event.data.fd = fd;
+    // 默认边缘触发
     event.events  = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
     epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
 }
@@ -74,5 +80,5 @@ void addsig(int sig) {
     sa.sa_handler = sig_handler;
     sa.sa_flags |= SA_RESTART;
     sigfillset(&sa.sa_mask);
-    assert(sigaction(sig, &sa, NULL) != -1);
+    assert(sigaction(sig, &sa, nullptr) != -1);
 }

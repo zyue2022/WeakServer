@@ -4,11 +4,10 @@
 #include "timer.h"
 
 class client_timer;
-class connection;
 
 // 定时器链表，它是一个升序、双向链表，且带有头节点和尾节点。
 class client_timer_list {
-private:
+public:
     client_timer* head;  // 头结点
     client_timer* tail;  // 尾结点
 

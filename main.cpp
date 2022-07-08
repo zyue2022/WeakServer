@@ -1,11 +1,11 @@
+#include "clientlist.h"
 #include "connection.h"
 #include "timer.h"
-#include "clientlist.h"
 
 const int MAX_FD           = 65535;  // 最大的文件描述符个数
 const int MAX_EVENT_NUMBER = 10000;  // epoll实例最大监听数量
 
-int TIMESLOT = 5;    // 定时触发时间，单位秒
+int TIMESLOT  = 5;    // 定时触发时间，单位秒
 int pipefd[2] = {0};  // 传输信号的管道，[0]读，[1]写
 
 int main(int argc, char* argv[]) {
@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
     assert(epollfd != -1);
 
     // 将监听文件描述符信息添加到epoll实例
-    add_fd_to_epoll(epollfd, listenfd, false);
+    add_fd_to_epoll(epollfd, listenfd, false, false);
 
     // 创建epoll事件数组
     epoll_event events[MAX_EVENT_NUMBER];
@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
     ret = socketpair(PF_UNIX, SOCK_STREAM, 0, pipefd);
     assert(ret != -1);
     set_fd_nonblock(pipefd[1]);
-    add_fd_to_epoll(epollfd, pipefd[0], false);
+    add_fd_to_epoll(epollfd, pipefd[0], false, false);
 
     // 设置信号处理函数
     addsig(SIGALRM);
@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
         // 返回检测到几个事件
         int num = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);  // -1是阻塞
 
-        if (num < 0 && errno != EINTR) {
+        if (num == -1 && errno != EINTR) {
             printf("epoll failed...\n");
             break;
         }
@@ -92,11 +92,13 @@ int main(int argc, char* argv[]) {
             if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                 // 对方异常断开或错误等事件
                 connections[sockfd].close_conn();
+                continue;
             }
 
             if (sockfd == pipefd[0]) {
                 // 检测到定时信号
-                char signals[1024];
+                char signals[1024] = {0};
+
                 ret = recv(pipefd[0], signals, sizeof(signals), 0);
                 if (ret == -1 || ret == 0) {
                     continue;
@@ -107,9 +109,7 @@ int main(int argc, char* argv[]) {
                     timeout = true;
                     break;
                 }
-            }
-
-            if (sockfd == listenfd) {
+            } else if (sockfd == listenfd) {
                 // 新客户端连接
                 sockaddr_in client_address;
                 socklen_t   client_addr_size = sizeof(client_address);
@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
                 }
 
                 if (connection::user_count >= MAX_FD) {
-                    // 目前最大连接数满，可以给客户端发送服务器内部正忙
+                    // 目前最大连接数满
                     close(cfd);
                     continue;
                 }
@@ -132,21 +132,26 @@ int main(int argc, char* argv[]) {
                 // 创建定时器，绑定定时器与用户连接数据
                 client_timer* timer    = new client_timer(connections[cfd]);
                 connections[cfd].timer = timer;
+                // 必须在init_conn之前设置好fd和timer
                 connections[cfd].init_conn();
 
             } else if (events[i].events & EPOLLIN) {
                 // 一次性读出所有数据
                 if (connections[sockfd].read()) {
+                    connections[sockfd].update_timer();
                     thread_pool->append(connections + sockfd);
                 } else {
+                    printf("close becuse read wrong...\n");
                     connections[sockfd].close_conn();
                 }
 
             } else if (events[i].events & EPOLLOUT) {
                 // 写数据，并判断是否成功
                 if (!connections[sockfd].write()) {
+                    printf("close becuse write wrong...\n");
                     connections[sockfd].close_conn();
                 }
+                connections[sockfd].update_timer();
             }
         }
         /* 
@@ -154,6 +159,7 @@ int main(int argc, char* argv[]) {
             但这样做将导致定时任务不能精准的按照预定的时间执行。
         */
         if (timeout) {
+            printf("curtime: %ld , 触发5s定时器...\n", time(nullptr));
             // 定时处理任务，实际上就是调用tick()函数
             connection::timer_list->tick();
             // 因为一次 alarm 调用只会引起一次SIGALARM 信号，所以我们要重新定时，以不断触发 SIGALARM信号。
@@ -161,6 +167,7 @@ int main(int argc, char* argv[]) {
             timeout = false;
         }
     }
+
     close(epollfd);
     close(listenfd);
     close(pipefd[0]);

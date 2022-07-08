@@ -1,6 +1,7 @@
 #include "connection.h"
-#include "timer.h"
+
 #include "clientlist.h"
+#include "timer.h"
 
 // 定义HTTP响应的一些状态信息
 const char* ok_200_title    = "OK";
@@ -16,31 +17,31 @@ const char* error_500_form  = "There was an unusual problem serving the requeste
 // 网站的根目录
 const char* doc_root = "/home/zyue/lesson/http_server/resources";
 
-int connection::epollfd = -1;
-
+int connection::epollfd    = -1;
 int connection::user_count = 0;
 
 client_timer_list* connection::timer_list = nullptr;
 
+connection::connection() : sockfd(-1), timer(nullptr) {}
+connection::~connection() {}
+
 void connection::init_conn() {
-    //print_client_info(client.client_address);
     init_timer();
+    print_client_info(client_address);
     reuse_addr(sockfd);
-    add_fd_to_epoll(epollfd, sockfd, true);
+    add_fd_to_epoll(epollfd, sockfd, true, true);
     init_parse();
     ++user_count;
+    printf("after init, we have %d conn in all now...\n", user_count);
 }
 
 void connection::init_timer() {
-    // 设置定时器超时时间，将定时器添加到链表timer_lst中
-    time_t curtime = time(nullptr);
-    timer->expire  = curtime + 3 * TIMESLOT;
+    timer->renew_expire_time();
     timer_list->add_timer_to_list(timer);
 }
 
 void connection::update_timer() {
-    time_t cur    = time(nullptr);
-    timer->expire = cur + 3 * TIMESLOT;
+    timer->renew_expire_time();
     timer_list->adjust_timer_on_list(timer);
 }
 
@@ -49,30 +50,40 @@ void connection::init_parse() {
     bzero(write_buf, WRITE_BUF_SIZE);
     bzero(file_path, FILENAME_LEN);
 
+    //struct stat  file_stat;  // 目标文件的状态。
+    //struct iovec iv[2];      // 采用writev来执行写操作
+
     read_idx       = 0;
-    write_idx      = 0;
     parse_idx      = 0;
     parse_line     = 0;
     content_len    = 0;
+    write_idx      = 0;
     bytes_to_send  = 0;
     bytes_had_send = 0;
+    iv_count       = 0;
 
-    url     = nullptr;
-    version = nullptr;
-    host    = nullptr;
+    url          = nullptr;
+    version      = nullptr;
+    host         = nullptr;
+    file_address = nullptr;
 
     check_state   = CHECK_STATE_REQUESTLINE;
     method        = GET;
     is_keep_alive = false;
 }
 
+void connection::close_sock() {
+    if (sockfd == -1) return;
+    remove_fd_from_epoll(epollfd, sockfd);
+    sockfd = -1;
+    --user_count;
+    printf("after close, there have %d conn in all...\n", user_count);
+}
+
 void connection::close_conn() {
-    if (sockfd != -1) {
-        remove_fd_from_epoll(epollfd, sockfd);
-        sockfd = -1;
-        timer_list->del_timer_from_list(timer);
-        --user_count;
-    }
+    if (sockfd == -1) return;
+    close_sock();
+    timer_list->del_timer_from_list(timer);
 }
 
 bool connection::read() {
@@ -84,7 +95,7 @@ bool connection::read() {
         bytes_of_read = recv(sockfd, read_buf + read_idx, READ_BUF_SIZE - read_idx, 0);
         if (bytes_of_read == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // 没有数据
+                // 读完全部数据
                 break;
             }
             return false;
@@ -94,8 +105,7 @@ bool connection::read() {
         }
         read_idx += bytes_of_read;
     }
-    update_timer();
-    printf("接收到数据：\n%s\n", read_buf);
+    //printf("接收到数据：\n%s\n", read_buf);
     return true;
 }
 
@@ -195,7 +205,7 @@ HTTP_CODE connection::parse_http_header(char* text) {
         text += strspn(text, " \t");
         host = text;
     } else {
-        printf("oop! unknow header %s\n", text);
+        //printf("unknow header %s\n", text);
     }
     return NO_REQUEST;
 }
@@ -221,7 +231,7 @@ HTTP_CODE connection::parse_http_request() {
         // 获取一行数据
         text       = get_one_line();
         parse_line = parse_idx;
-        printf("got one http line: \n%s\n\n", text);
+        // printf("got one http line: \n%s\n\n", text);
 
         switch (check_state) {
             case CHECK_STATE_REQUESTLINE: {

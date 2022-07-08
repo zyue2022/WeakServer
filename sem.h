@@ -8,7 +8,7 @@
 // 信号量类
 class sem {
 private:
-    sem_t m_sem;
+    sem_t sema;
 
 public:
     sem();
@@ -18,15 +18,15 @@ public:
 };
 
 inline sem::sem() {
-    if (sem_init(&m_sem, 0, 0) != 0) {
+    if (sem_init(&sema, 0, 0) != 0) {
         throw std::exception();
     }
 }
 
-inline sem::~sem() { sem_destroy(&m_sem); }
+inline sem::~sem() { sem_destroy(&sema); }
 
-inline bool sem::wait() { return sem_wait(&m_sem) == 0; }
+inline bool sem::wait() { return sem_wait(&sema) == 0; }
 
-inline bool sem::post() { return sem_post(&m_sem) == 0; }
+inline bool sem::post() { return sem_post(&sema) == 0; }
 
 #endif

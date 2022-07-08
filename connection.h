@@ -9,12 +9,14 @@ class client_timer_list;
 
 class connection {
 public:
-    static int                user_count;      // 统计目前用户数量
-    static int                epollfd;         // 所有socket上的事件都被注册到同一个epoll对象中
-    sockaddr_in               client_address;  // 客户端地址
-    int                       sockfd;          // socket文件描述符
-    client_timer*             timer;           // 定时器
-    static client_timer_list* timer_list;      // 每个HTTP连接的定时器的列表
+    static int user_count;  // 统计目前用户数量
+    static int epollfd;     // 所有socket上的事件都被注册到同一个epoll对象中
+
+    static client_timer_list* timer_list;  // 每个HTTP连接的定时器的列表
+
+    sockaddr_in   client_address;  // 客户端地址
+    int           sockfd;          // socket文件描述符
+    client_timer* timer;           // 定时器
 
 private:
     static const int READ_BUF_SIZE  = 2048;  // 读缓冲区大小
@@ -38,21 +40,22 @@ private:
 private:
     char         write_buf[WRITE_BUF_SIZE];  // 写缓冲区
     int          write_idx;                  // 写缓冲区中待发送的字节数
-    int          bytes_to_send;              // 将要发送的数据的字节数
-    int          bytes_had_send;             // 已经发送的字节数
+    size_t       bytes_to_send;              // 将要发送的数据的字节数
+    size_t       bytes_had_send;             // 已经发送的字节数
     char*        file_address;               // 客户请求的目标文件被mmap到内存中的起始位置
     struct stat  file_stat;                  // 目标文件的状态。
     struct iovec iv[2];                      // 采用writev来执行写操作
     int          iv_count;                   // iv_count表示被写内存块的数量
 
 public:
-    connection() {}
-    ~connection() {}
+    connection();
+    ~connection();
 
     void init_conn();     // 初始化新客户端http连接
     void init_timer();    // 初始化定时器
     void update_timer();  // 更新定时器
-    void close_conn();    // 关闭连接
+    void close_sock();    // 断开连接
+    void close_conn();    // 删除连接
     bool read();          // 非阻塞读数据，一次性读完
     bool write();         // 非阻塞写数据，一次性写完
     void process();       // 处理http请求，由线程池里面的线程调用

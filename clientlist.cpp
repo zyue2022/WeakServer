@@ -15,6 +15,7 @@ client_timer_list::~client_timer_list() {
 
 void client_timer_list::tick() {
     if (!head) {
+        printf("empty list\n");
         return;
     }
 
@@ -27,11 +28,16 @@ void client_timer_list::tick() {
             break;
         }
 
-        // 超时就删除连接
-        tmp->http_conn.close_conn();
+        head = tmp->next;//更新头节点位置
 
+        // 超时就先关闭连接，后删除相应定时器；
+        printf("find a timeout conn...\n");
+        tmp->http_conn->close_sock();
+        printf("kill a timeout conn...\n");
+        
+        // 执行完定时器中的定时任务之后，就将它从链表中删除，并重置链表头节点
         head = tmp->next;
-        if (head) {
+        if( head ) {
             head->prev = nullptr;
         }
         delete tmp;
@@ -48,6 +54,7 @@ void client_timer_list::del_timer_from_list(client_timer* timer) {
         delete timer;
         head = nullptr;
         tail = nullptr;
+        // printf("目前服务器无连接...\n");
         return;
     }
     /* 
