@@ -1,55 +1,59 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
+#include "clientlist.h"
 #include "epfd.h"
 #include "httpstate.h"
+#include "timer.h"
 
 class connection {
 public:
-    static int m_user_count;  // 统计目前用户数量
-    static int m_epollfd;     // 所有socket上的事件都被注册到同一个epoll对象中
+    static int user_count;  // 统计目前用户数量
+    static int epollfd;     // 所有socket上的事件都被注册到同一个epoll对象中
+
+    static client_timer_list* timer_list;  // 每个HTTP连接的定时器的列表
+    client_info               client;      // 该HTTP的连接信息
 
 private:
     static const int READ_BUF_SIZE  = 2048;  // 读缓冲区大小
     static const int WRITE_BUF_SIZE = 2048;  // 写缓冲区大小
     static const int FILENAME_LEN   = 200;   // 文件名的最大长度
 
-    int         m_sockfd;          // 该HTTP连接的socket文件描述符
-    sockaddr_in m_client_address;  // 该HTTP连接的地址信息
+private:
+    char        read_buf[READ_BUF_SIZE];  // 读缓冲区
+    int         read_idx;                 // 在读缓冲区读取数据时的索引
+    int         parse_idx;                // 当前正在解析的请求的字符在读缓冲区的位置
+    int         parse_line;               // 当前正在解析的请求的所在行，即行的起始位置
+    CHECK_STATE check_state;              // 主状态机当前所处的状态
+    METHOD      method;                   // 请求方法
+    char*       url;                      // 请求的目标文件的文件名
+    char*       version;                  // HTTP协议版本号，我们仅支持HTTP1.1
+    char*       host;                     // 主机名
+    char        file_path[FILENAME_LEN];  // 请求的目标文件的完整路径，其内容等于 doc_root + url
+    bool        is_keep_alive;            // 是否开启HTTP长连接
+    int         content_len;              // HTTP请求的消息总长度
 
 private:
-    char        m_read_buf[READ_BUF_SIZE];  // 读缓冲区
-    int         m_read_idx;                 // 在读缓冲区读取数据时的索引
-    int         m_parse_idx;                // 当前正在解析的请求的字符在读缓冲区的位置
-    int         m_parse_line;               // 当前正在解析的请求的所在行，即行的起始位置
-    CHECK_STATE m_check_state;              // 主状态机当前所处的状态
-    METHOD      m_method;                   // 请求方法
-    char*       m_url;                      // 请求的目标文件的文件名
-    char*       m_version;                  // HTTP协议版本号，我们仅支持HTTP1.1
-    char*       m_host;                     // 主机名
-    char        m_file_path[FILENAME_LEN];  // 请求的目标文件的完整路径，其内容等于 doc_root + m_url
-    bool        is_keep_alive;              // 是否开启HTTP长连接
-    int         m_content_len;              // HTTP请求的消息总长度
-
-private:
-    char         m_write_buf[WRITE_BUF_SIZE];  // 写缓冲区
-    int          m_write_idx;                  // 写缓冲区中待发送的字节数
-    int          bytes_to_send;                // 将要发送的数据的字节数
-    int          bytes_had_send;               // 已经发送的字节数
-    char*        m_file_address;               // 客户请求的目标文件被mmap到内存中的起始位置
-    struct stat  m_file_stat;                  // 目标文件的状态。
-    struct iovec m_iv[2];                      // 采用writev来执行写操作
-    int          m_iv_count;                   // m_iv_count表示被写内存块的数量
+    char         write_buf[WRITE_BUF_SIZE];  // 写缓冲区
+    int          write_idx;                  // 写缓冲区中待发送的字节数
+    int          bytes_to_send;              // 将要发送的数据的字节数
+    int          bytes_had_send;             // 已经发送的字节数
+    char*        file_address;               // 客户请求的目标文件被mmap到内存中的起始位置
+    struct stat  file_stat;                  // 目标文件的状态。
+    struct iovec iv[2];                      // 采用writev来执行写操作
+    int          iv_count;                   // iv_count表示被写内存块的数量
 
 public:
     connection() {}
     ~connection() {}
 
-    void init_conn(int, sockaddr_in&);  // 初始化新客户端http连接
-    void close_conn();                  // 关闭连接
-    bool read();                        // 非阻塞读数据，一次性读完
-    bool write();                       // 非阻塞写数据，一次性写完
-    void process();                     // 处理http请求，由线程池里面的线程调用
+    void init_conn();     // 初始化新客户端http连接
+    void init_timer();    // 初始化定时器
+    void update_timer();  // 更新定时器
+    void close_conn();    // 关闭连接
+    bool read();          // 非阻塞读数据，一次性读完
+    bool write();         // 非阻塞写数据，一次性写完
+    void process();       // 处理http请求，由线程池里面的线程调用
 
 private:
     void      init_parse();          // 初始化http解析请求的状态

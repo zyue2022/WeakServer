@@ -56,7 +56,7 @@ void client_timer_list::tick() {
         }
 
         // 调用定时器的回调函数，以执行定时任务
-        tmp->cb_func(tmp->user_data);
+        tmp->http_conn->close_conn();
         
         head = tmp->next;
         if (head) {
