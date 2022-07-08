@@ -1,4 +1,6 @@
 #include "connection.h"
+#include "timer.h"
+#include "clientlist.h"
 
 // 定义HTTP响应的一些状态信息
 const char* ok_200_title    = "OK";
@@ -22,23 +24,21 @@ client_timer_list* connection::timer_list = nullptr;
 
 void connection::init_conn() {
     //print_client_info(client.client_address);
-    reuse_addr(client.sockfd);
-    add_fd_to_epoll(epollfd, client.sockfd, true);
-    ++user_count;
-    init_parse();
     init_timer();
+    reuse_addr(sockfd);
+    add_fd_to_epoll(epollfd, sockfd, true);
+    init_parse();
+    ++user_count;
 }
 
 void connection::init_timer() {
     // 设置定时器超时时间，将定时器添加到链表timer_lst中
-    client_timer* timer = client.timer;
-    time_t curtime      = time(nullptr);
-    timer->expire       = curtime + 3 * TIMESLOT;
+    time_t curtime = time(nullptr);
+    timer->expire  = curtime + 3 * TIMESLOT;
     timer_list->add_timer_to_list(timer);
 }
 
 void connection::update_timer() {
-    client_timer* timer = client.timer;
     time_t cur    = time(nullptr);
     timer->expire = cur + 3 * TIMESLOT;
     timer_list->adjust_timer_on_list(timer);
@@ -67,10 +67,10 @@ void connection::init_parse() {
 }
 
 void connection::close_conn() {
-    if (client.sockfd != -1) {
-        remove_fd_from_epoll(epollfd, client.sockfd);
-        client.sockfd = -1;
-        timer_list->del_timer_from_list(client.timer);
+    if (sockfd != -1) {
+        remove_fd_from_epoll(epollfd, sockfd);
+        sockfd = -1;
+        timer_list->del_timer_from_list(timer);
         --user_count;
     }
 }
@@ -81,7 +81,7 @@ bool connection::read() {
     }
     int bytes_of_read = 0;
     while (1) {
-        bytes_of_read = recv(client.sockfd, read_buf + read_idx, READ_BUF_SIZE - read_idx, 0);
+        bytes_of_read = recv(sockfd, read_buf + read_idx, READ_BUF_SIZE - read_idx, 0);
         if (bytes_of_read == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // 没有数据
@@ -308,19 +308,19 @@ bool connection::write() {
 
     if (bytes_to_send == 0) {
         // 将要发送的字节为0，这一次响应结束。
-        modify_fd_from_epoll(epollfd, client.sockfd, EPOLLIN);
+        modify_fd_from_epoll(epollfd, sockfd, EPOLLIN);
         init_parse();
         return true;
     }
 
     while (1) {
         // 分散写
-        temp = writev(client.sockfd, iv, iv_count);
+        temp = writev(sockfd, iv, iv_count);
         if (temp <= -1) {
             // 如果TCP写缓冲没有空间，则等待下一轮EPOLLOUT事件，虽然在此期间，
             // 服务器无法立即接收到同一客户的下一个请求，但可以保证连接的完整性。
             if (errno == EAGAIN) {
-                modify_fd_from_epoll(epollfd, client.sockfd, EPOLLOUT);
+                modify_fd_from_epoll(epollfd, sockfd, EPOLLOUT);
                 return true;
             }
             unmap();
@@ -342,7 +342,7 @@ bool connection::write() {
         if (bytes_to_send <= 0) {
             // 没有数据要发送了
             unmap();
-            modify_fd_from_epoll(epollfd, client.sockfd, EPOLLIN);
+            modify_fd_from_epoll(epollfd, sockfd, EPOLLIN);
 
             if (is_keep_alive) {
                 init_parse();
@@ -458,7 +458,7 @@ void connection::process() {
     // 解析HTTP请求
     HTTP_CODE read_ret = parse_http_request();
     if (read_ret == NO_REQUEST) {
-        modify_fd_from_epoll(epollfd, client.sockfd, EPOLLIN);
+        modify_fd_from_epoll(epollfd, sockfd, EPOLLIN);
         return;
     }
 
@@ -467,5 +467,5 @@ void connection::process() {
     if (!write_ret) {
         close_conn();
     }
-    modify_fd_from_epoll(epollfd, client.sockfd, EPOLLOUT);
+    modify_fd_from_epoll(epollfd, sockfd, EPOLLOUT);
 }

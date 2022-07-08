@@ -1,18 +1,20 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
-#include "clientlist.h"
 #include "epfd.h"
 #include "httpstate.h"
-#include "timer.h"
+
+class client_timer;
+class client_timer_list;
 
 class connection {
 public:
-    static int user_count;  // 统计目前用户数量
-    static int epollfd;     // 所有socket上的事件都被注册到同一个epoll对象中
-
-    static client_timer_list* timer_list;  // 每个HTTP连接的定时器的列表
-    client_info               client;      // 该HTTP的连接信息
+    static int                user_count;      // 统计目前用户数量
+    static int                epollfd;         // 所有socket上的事件都被注册到同一个epoll对象中
+    sockaddr_in               client_address;  // 客户端地址
+    int                       sockfd;          // socket文件描述符
+    client_timer*             timer;           // 定时器
+    static client_timer_list* timer_list;      // 每个HTTP连接的定时器的列表
 
 private:
     static const int READ_BUF_SIZE  = 2048;  // 读缓冲区大小

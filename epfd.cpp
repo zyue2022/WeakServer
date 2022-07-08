@@ -76,11 +76,3 @@ void addsig(int sig) {
     sigfillset(&sa.sa_mask);
     assert(sigaction(sig, &sa, NULL) != -1);
 }
-
-void timer_handler(client_timer_list* timer_list) {
-    // 定时处理任务，实际上就是调用tick()函数
-    timer_list->tick();
-    // 因为一次 alarm 调用只会引起一次SIGALARM 信号，所以我们要重新定时，以不断触发 SIGALARM信号。
-    alarm(TIMESLOT);
-}
-

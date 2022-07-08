@@ -1,11 +1,12 @@
 #include "connection.h"
+#include "timer.h"
+#include "clientlist.h"
 
 const int MAX_FD           = 65535;  // 最大的文件描述符个数
 const int MAX_EVENT_NUMBER = 10000;  // epoll实例最大监听数量
 
-extern int TIMESLOT;  //定时器触发时间
-
-extern int pipefd[2];  // 传输信号的管道，[0]读，[1]写
+int TIMESLOT = 5;    // 定时触发时间，单位秒
+int pipefd[2] = {0};  // 传输信号的管道，[0]读，[1]写
 
 int main(int argc, char* argv[]) {
     // 判断传入参数
@@ -126,12 +127,11 @@ int main(int argc, char* argv[]) {
                 }
 
                 // 初始化，用文件描述符来充当索引
-                connections[cfd].client.sockfd         = cfd;
-                connections[cfd].client.client_address = client_address;
+                connections[cfd].sockfd         = cfd;
+                connections[cfd].client_address = client_address;
                 // 创建定时器，绑定定时器与用户连接数据
-                client_timer* timer = new client_timer();
-                timer->http_conn = &connections[cfd];
-                connections[cfd].client.timer = timer;
+                client_timer* timer    = new client_timer(connections[cfd]);
+                connections[cfd].timer = timer;
                 connections[cfd].init_conn();
 
             } else if (events[i].events & EPOLLIN) {
@@ -154,12 +154,17 @@ int main(int argc, char* argv[]) {
             但这样做将导致定时任务不能精准的按照预定的时间执行。
         */
         if (timeout) {
-            timer_handler(connection::timer_list);
+            // 定时处理任务，实际上就是调用tick()函数
+            connection::timer_list->tick();
+            // 因为一次 alarm 调用只会引起一次SIGALARM 信号，所以我们要重新定时，以不断触发 SIGALARM信号。
+            alarm(TIMESLOT);
             timeout = false;
         }
     }
     close(epollfd);
     close(listenfd);
+    close(pipefd[0]);
+    close(pipefd[1]);
 
     delete[] connections;
     delete thread_pool;
