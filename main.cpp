@@ -150,8 +150,10 @@ int main(int argc, char* argv[]) {
                 if (!connections[sockfd].write()) {
                     printf("close becuse write wrong...\n");
                     connections[sockfd].close_conn();
+                } else {
+                    // 也可以不更新
+                    //connections[sockfd].update_timer();
                 }
-                connections[sockfd].update_timer();
             }
         }
         /* 
