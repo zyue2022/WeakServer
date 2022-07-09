@@ -50,7 +50,7 @@ void modify_fd_from_epoll(int epollfd, int fd, int ev) {
     epoll_event event;
     event.data.fd = fd;
     // 默认边缘触发
-    event.events  = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
+    event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
     epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
 }
 
@@ -68,8 +68,8 @@ void print_client_info(sockaddr_in client_address) {
     printf("client ip is %s, port is %d\n", clientIp, clientPort);
 }
 
-// 信号处理函数
-void sig_handler(int sig) {
+// 定时信号处理函数
+void alrm_handler(int sig) {
     int save_errno = errno;
     int msg        = sig;
     send(pipefd[1], (char*)&msg, 1, 0);
@@ -77,11 +77,19 @@ void sig_handler(int sig) {
 }
 
 // 信号捕捉
-void addsig(int sig) {
+void addsig(int sig, void(handler)(int), bool restart) {
     struct sigaction sa;
     memset(&sa, '\0', sizeof(sa));
-    sa.sa_handler = sig_handler;
-    sa.sa_flags |= SA_RESTART;
+    sa.sa_handler = handler;
+    if (restart) {
+        sa.sa_flags |= SA_RESTART;
+    }
     sigfillset(&sa.sa_mask);
     assert(sigaction(sig, &sa, nullptr) != -1);
+}
+
+void show_busy(int fd) {
+    char info[] = "Internal server busy...\n";
+    send(fd, info, strlen(info), 0);
+    close(fd);
 }

@@ -28,7 +28,6 @@ connection::~connection() {}
 void connection::init_conn() {
     init_timer();
     print_client_info(client_address);
-    reuse_addr(sockfd);
     add_fd_to_epoll(epollfd, sockfd, true, true);
     init_parse();
     ++user_count;

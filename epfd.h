@@ -34,7 +34,9 @@ void modify_fd_from_epoll(int epollfd, int fd, int ev);                // 从epo
 void reuse_addr(int sockfd);                         // 设置端口复用
 void print_client_info(sockaddr_in client_address);  // 打印新连接的客户端信息
 
-void sig_handler(int sig);  // 信号处理函数
-void addsig(int sig);       // 信号捕捉
+void addsig(int sig, void(handler)(int), bool restart = true);  // 信号捕捉
+void alrm_handler(int sig);                                     // 定时信号处理函数
+
+void show_busy(int fd);  // 回送服务器正忙信息
 
 #endif

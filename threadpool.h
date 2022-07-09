@@ -13,7 +13,7 @@
 /*
     int             num_of_thread;         :    线程数量
     pthread_t*      threads;               :    线程池数组
-    int             max_num_of_requests;   :    请求队列大小
+    int             max_num_of_task;       :    请求队列大小
     std::queue<T*>  workqueue;             :    请求队列
     locker          queuelocker;           :    互斥锁
     sem             queuestat;             :    信号量，用于判断是否有任务需要处理
@@ -26,7 +26,7 @@ class threadpool {
 private:
     int               num_of_thread;
     pthread_t*        threads;
-    long unsigned int max_num_of_conn;
+    long unsigned int max_num_of_task;
     std::queue<T*>    workqueue;
     locker            queuelocker;
     sem               queuestat;
@@ -44,7 +44,7 @@ public:
 
 template <typename T>
 threadpool<T>::threadpool(int num, int max)
-    : num_of_thread(num), threads(nullptr), max_num_of_conn(max), is_need_stop(false) {
+    : num_of_thread(num), threads(nullptr), max_num_of_task(max), is_need_stop(false) {
     if (num <= 0 || max <= 0) {
         throw std::exception();
     }
@@ -79,14 +79,14 @@ threadpool<T>::~threadpool() {
 }
 
 template <typename T>
-bool threadpool<T>::append(T* conn) {
+bool threadpool<T>::append(T* task) {
     queuelocker.lock();
-    if (workqueue.size() >= max_num_of_conn) {
+    if (workqueue.size() >= max_num_of_task) {
         queuelocker.unlock();
         return false;
     }
 
-    workqueue.push(conn);
+    workqueue.push(task);
     queuelocker.unlock();
     queuestat.post();  // 信号量的V操作
     return true;
@@ -107,17 +107,22 @@ void threadpool<T>::run() {
         queuestat.wait();  // 信号量的P操作
         queuelocker.lock();
 
-        T* conn = workqueue.front();
-        workqueue.pop();
-        queuelocker.unlock();
-
-        // 如果传进的连接conn本身就是个null的话，必须要判断
-        if (!conn) {
+        if (workqueue.empty()) {
+            queuelocker.unlock();
             continue;
         }
 
-        // process函数在connection类
-        conn->process();
+        T* task = workqueue.front();
+        workqueue.pop();
+        queuelocker.unlock();
+
+        // 如果传进的连接task本身就是个null的话，必须要判断
+        if (!task) {
+            continue;
+        }
+
+        // process函数在taskection类
+        task->process();
     }
 }
 

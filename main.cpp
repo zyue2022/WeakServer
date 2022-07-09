@@ -20,6 +20,11 @@ int main(int argc, char* argv[]) {
         exit(-1);
     }
 
+    // 忽略SIGPIPE信号
+    addsig(SIGPIPE, SIG_IGN);
+    // 捕捉信号,防止进程默认终止
+    addsig(SIGALRM, alrm_handler);
+
     // 服务器本地地址信息
     sockaddr_in local_address;
     bzero(&local_address, sizeof(local_address));
@@ -74,9 +79,6 @@ int main(int argc, char* argv[]) {
     set_fd_nonblock(pipefd[1]);
     add_fd_to_epoll(epollfd, pipefd[0], false, false);
 
-    // 捕捉信号,防止进程默认终止
-    addsig(SIGALRM);
-
     bool timeout = false;
 
     // 定时,5秒后产生SIGALARM信号
@@ -122,7 +124,7 @@ int main(int argc, char* argv[]) {
 
                 if (connection::user_count >= MAX_FD) {
                     // 目前最大连接数满
-                    close(cfd);
+                    show_busy(cfd);
                     continue;
                 }
 
@@ -130,8 +132,8 @@ int main(int argc, char* argv[]) {
                 connections[cfd].sockfd         = cfd;
                 connections[cfd].client_address = client_address;
                 // 创建定时器，绑定定时器与用户连接数据
-                client_timer* timer    = new client_timer(connections[cfd]);
-                connections[cfd].timer = timer;
+                connections[cfd].timer = new client_timer(connections[cfd]);
+
                 // 必须在init_conn之前设置好fd和timer
                 connections[cfd].init_conn();
 
@@ -157,7 +159,7 @@ int main(int argc, char* argv[]) {
                     connections[sockfd].close_conn();
                 } else {
                     // 也可以不更新
-                    //connections[sockfd].update_timer();
+                    connections[sockfd].update_timer();
                 }
             }
         }
