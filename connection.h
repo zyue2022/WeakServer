@@ -2,7 +2,7 @@
 #define CONNECTION_H
 
 #include "epfd.h"
-#include "httpstate.h"
+#include "state.h"
 
 class client_timer;
 class client_timer_list;
@@ -62,19 +62,19 @@ public:
 
 private:
     void      init_parse();          // 初始化http解析请求的状态
-    HTTP_CODE parse_http_request();  // 解析http请求
+    HTTP_CODE parse_http();  // 解析http请求
 
     /* 下面这一组函数被parse_http_request调用来解析请求报文 */
 
     char*       get_one_line();                       // 获取一行报文
     LINE_STATUS parse_http_one_line();                // 解析http请求的某一行
-    HTTP_CODE   parse_http_request_line(char* text);  // 解析HTTP请求方法、目标URL、版本号
+    HTTP_CODE   parse_http_request(char* text);  // 解析HTTP请求方法、目标URL、版本号
     HTTP_CODE   parse_http_header(char* text);        // 解析http请求头部
     HTTP_CODE   parse_http_content(char* text);       // 解析http请求体
-    HTTP_CODE   do_request();                         // 具体处理请求
+    HTTP_CODE   fetch_file();                         // 具体处理请求
 
 private:
-    bool make_http_response(HTTP_CODE ret_code);  // 填充http响应
+    bool reply_http(HTTP_CODE ret_code);  // 填充http响应
 
     /* 下面这一组函数被make_http_response调用以填充http响应 */
 

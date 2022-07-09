@@ -1,11 +1,11 @@
 #include "epfd.h"
 
 // 设置文件描述符非阻塞
-int set_fd_nonblock(int fd) {
+void set_fd_nonblock(int fd) {
+    if (fd == -1) return;
     int old_flag = fcntl(fd, F_GETFL);
     int new_flag = old_flag | O_NONBLOCK;
     fcntl(fd, F_SETFL, new_flag);
-    return old_flag;
 }
 
 /*
@@ -15,6 +15,7 @@ int set_fd_nonblock(int fd) {
     防止一个线程在处理业务呢，然后来数据了，又从线程池里拿一个线程来处理新的业务;
 */
 void add_fd_to_epoll(int epollfd, int fd, bool one_shot, bool is_ET) {
+    if (fd == -1) return;
     epoll_event event;
     event.data.fd = fd;
 
@@ -35,6 +36,7 @@ void add_fd_to_epoll(int epollfd, int fd, bool one_shot, bool is_ET) {
 
 // 从epoll对象中删除文件描述符
 void remove_fd_from_epoll(int epollfd, int fd) {
+    if (fd == -1) return;
     epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0);
     close(fd);
 }
@@ -44,6 +46,7 @@ void remove_fd_from_epoll(int epollfd, int fd) {
     重置socket上EPOLLONESHOT事件,确保下一次可读时 EPOLLIN 可触发
 */
 void modify_fd_from_epoll(int epollfd, int fd, int ev) {
+    if (fd == -1) return;
     epoll_event event;
     event.data.fd = fd;
     // 默认边缘触发

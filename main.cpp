@@ -2,6 +2,11 @@
 #include "connection.h"
 #include "timer.h"
 
+// 开启epoll事件细分
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 const int MAX_FD           = 65535;  // 最大的文件描述符个数
 const int MAX_EVENT_NUMBER = 10000;  // epoll实例最大监听数量
 
@@ -17,6 +22,7 @@ int main(int argc, char* argv[]) {
 
     // 服务器本地地址信息
     sockaddr_in local_address;
+    bzero(&local_address, sizeof(local_address));
     local_address.sin_family      = AF_INET;
     local_address.sin_addr.s_addr = INADDR_ANY;
     int local_port                = atoi(argv[1]);
@@ -68,7 +74,7 @@ int main(int argc, char* argv[]) {
     set_fd_nonblock(pipefd[1]);
     add_fd_to_epoll(epollfd, pipefd[0], false, false);
 
-    // 设置信号处理函数
+    // 捕捉信号,防止进程默认终止
     addsig(SIGALRM);
 
     bool timeout = false;
@@ -88,12 +94,6 @@ int main(int argc, char* argv[]) {
         // 循环遍历事件数组
         for (int i = 0; i < num; ++i) {
             int sockfd = events[i].data.fd;
-
-            if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-                // 对方异常断开或错误等事件
-                connections[sockfd].close_conn();
-                continue;
-            }
 
             if (sockfd == pipefd[0]) {
                 // 检测到定时信号
@@ -134,6 +134,11 @@ int main(int argc, char* argv[]) {
                 connections[cfd].timer = timer;
                 // 必须在init_conn之前设置好fd和timer
                 connections[cfd].init_conn();
+
+            } else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+                // 对方异常断开或挂起、错误等事件
+                printf("close because opposite close or hup or wrong...\n");
+                connections[sockfd].close_conn();
 
             } else if (events[i].events & EPOLLIN) {
                 // 一次性读出所有数据

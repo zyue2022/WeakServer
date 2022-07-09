@@ -15,7 +15,7 @@ const char* error_500_title = "Internal Error";
 const char* error_500_form  = "There was an unusual problem serving the requested file.\n";
 
 // 网站的根目录
-const char* doc_root = "/home/zyue/lesson/http_server/resources";
+const char* doc_root = "/home/zyue/lesson/resources";
 
 int connection::epollfd    = -1;
 int connection::user_count = 0;
@@ -95,6 +95,7 @@ bool connection::read() {
         bytes_of_read = recv(sockfd, read_buf + read_idx, READ_BUF_SIZE - read_idx, 0);
         if (bytes_of_read == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                //modify_fd_from_epoll(epollfd, sockfd, EPOLLIN);
                 // 读完全部数据
                 break;
             }
@@ -117,6 +118,7 @@ LINE_STATUS connection::parse_http_one_line() {
     for (; parse_idx < read_idx; ++parse_idx) {
         temp = read_buf[parse_idx];
         if (temp == '\r') {
+            // 遇到回车符
             if ((parse_idx + 1) == read_idx) {
                 return LINE_OPEN;
             } else if (read_buf[parse_idx + 1] == '\n') {
@@ -126,6 +128,7 @@ LINE_STATUS connection::parse_http_one_line() {
             }
             return LINE_BAD;
         } else if (temp == '\n') {
+            // 遇到换行符
             if ((parse_idx > 1) && (read_buf[parse_idx - 1] == '\r')) {
                 read_buf[parse_idx - 1] = '\0';
                 read_buf[parse_idx++]   = '\0';
@@ -137,14 +140,18 @@ LINE_STATUS connection::parse_http_one_line() {
     return LINE_OPEN;
 }
 
-HTTP_CODE connection::parse_http_request_line(char* text) {
+HTTP_CODE connection::parse_http_request(char* text) {
     // GET /index.html HTTP/1.1
-    url = strpbrk(text, " \t");  // 判断第二个参数中的字符哪个在text中最先出现
+    url = strpbrk(text, " \t");  // 返回第二个参数中的字符在text中的位置
     if (!url) {
+        // 说明请求行没有空格符或换行符，有问题
         return BAD_REQUEST;
     }
+    *url++ = '\0';  // 置位空字符，字符串结束符
     // GET\0/index.html HTTP/1.1
-    *url++        = '\0';  // 置位空字符，字符串结束符
+    //      ^
+    //     url
+
     char* _method = text;
     if (strcasecmp(_method, "GET") == 0) {  // 忽略大小写比较
         method = GET;
@@ -158,13 +165,18 @@ HTTP_CODE connection::parse_http_request_line(char* text) {
         return BAD_REQUEST;
     }
     *version++ = '\0';
+    // GET\0/index.html\0HTTP/1.1
+    //      ^            ^
+    //     url          version
+
     if (strcasecmp(version, "HTTP/1.1") != 0) {
         return BAD_REQUEST;
     }
-    /**
-     * http://192.168.110.129:10000/index.html
+    /*
+        http://192.168.110.129:10000/index.html
     */
     if (strncasecmp(url, "http://", 7) == 0) {
+        printf("url = %s\n", url);
         url += 7;
         // 在参数 str 所指向的字符串中搜索第一次出现字符 c（一个无符号字符）的位置。
         url = strchr(url, '/');
@@ -172,6 +184,7 @@ HTTP_CODE connection::parse_http_request_line(char* text) {
     if (!url || url[0] != '/') {
         return BAD_REQUEST;
     }
+    //printf("url = %s\n", url);
     check_state = CHECK_STATE_HEADER;  // 检查状态变成检查头
     return NO_REQUEST;
 }
@@ -190,6 +203,7 @@ HTTP_CODE connection::parse_http_header(char* text) {
     } else if (strncasecmp(text, "Connection:", 11) == 0) {
         // 处理Connection 头部字段  Connection: keep-alive
         text += 11;
+        //strspn检索字符串 str1 中第一个不在字符串 str2 中出现的字符下标。
         text += strspn(text, " \t");
         if (strcasecmp(text, "keep-alive") == 0) {
             is_keep_alive = true;
@@ -200,7 +214,7 @@ HTTP_CODE connection::parse_http_header(char* text) {
         text += strspn(text, " \t");
         content_len = atol(text);
     } else if (strncasecmp(text, "Host:", 5) == 0) {
-        // 处理Host头部字段
+        // 处理Host头部字段 Host: 192.168.30.128:10000
         text += 5;
         text += strspn(text, " \t");
         host = text;
@@ -210,6 +224,7 @@ HTTP_CODE connection::parse_http_header(char* text) {
     return NO_REQUEST;
 }
 
+// 没有真正解析HTTP请求的消息体，只是判断它是否被完整的读入了
 HTTP_CODE connection::parse_http_content(char* text) {
     if (read_idx >= (content_len + parse_idx)) {
         text[content_len] = '\0';
@@ -219,7 +234,7 @@ HTTP_CODE connection::parse_http_content(char* text) {
 }
 
 // 主状态机，解析请求
-HTTP_CODE connection::parse_http_request() {
+HTTP_CODE connection::parse_http() {
     LINE_STATUS line_status = LINE_OK;
     HTTP_CODE   ret_code    = NO_REQUEST;
     char*       text        = 0;
@@ -228,14 +243,12 @@ HTTP_CODE connection::parse_http_request() {
            (line_status = parse_http_one_line()) == LINE_OK) {
         // 解析到了请求体或一行完整的数据
 
-        // 获取一行数据
-        text       = get_one_line();
-        parse_line = parse_idx;
-        // printf("got one http line: \n%s\n\n", text);
+        text       = get_one_line();  // 获取一行数据
+        parse_line = parse_idx;       //更新下一行起始位置
 
         switch (check_state) {
             case CHECK_STATE_REQUESTLINE: {
-                ret_code = parse_http_request_line(text);
+                ret_code = parse_http_request(text);
                 if (ret_code == BAD_REQUEST) {
                     return BAD_REQUEST;
                 }
@@ -247,7 +260,7 @@ HTTP_CODE connection::parse_http_request() {
                 if (ret_code == BAD_REQUEST) {
                     return BAD_REQUEST;
                 } else if (ret_code == GET_REQUEST) {
-                    return do_request();
+                    return fetch_file();
                 }
                 break;
             }
@@ -257,7 +270,7 @@ HTTP_CODE connection::parse_http_request() {
                 if (ret_code == BAD_REQUEST) {
                     return BAD_REQUEST;
                 } else if (ret_code == GET_REQUEST) {
-                    return do_request();
+                    return fetch_file();
                 }
                 line_status = LINE_OPEN;
                 break;
@@ -276,7 +289,7 @@ HTTP_CODE connection::parse_http_request() {
     如果目标文件存在、对所有用户可读，且不是目录，则使用mmap将其
     映射到内存地址file_address处，并告诉调用者获取文件成功
 */
-HTTP_CODE connection::do_request() {
+HTTP_CODE connection::fetch_file() {
     // "/home/nowcoder/webserver/resources"
     strcpy(file_path, doc_root);
     int len = strlen(doc_root);
@@ -405,7 +418,7 @@ bool connection::add_content(const char* content) { return add_response("%s", co
 bool connection::add_content_type() { return add_response("Content-Type:%s\r\n", "text/html"); }
 
 // 根据服务器处理HTTP请求的结果，决定返回给客户端的内容
-bool connection::make_http_response(HTTP_CODE ret) {
+bool connection::reply_http(HTTP_CODE ret) {
     switch (ret) {
         case INTERNAL_ERROR: {
             add_status_line(500, error_500_title);
@@ -466,16 +479,18 @@ bool connection::make_http_response(HTTP_CODE ret) {
 
 void connection::process() {
     // 解析HTTP请求
-    HTTP_CODE read_ret = parse_http_request();
+    HTTP_CODE read_ret = parse_http();
     if (read_ret == NO_REQUEST) {
         modify_fd_from_epoll(epollfd, sockfd, EPOLLIN);
         return;
     }
 
     // 生成响应
-    bool write_ret = make_http_response(read_ret);
+    bool write_ret = reply_http(read_ret);
     if (!write_ret) {
+        printf("close because response failed...\n");
         close_conn();
+        return;
     }
     modify_fd_from_epoll(epollfd, sockfd, EPOLLOUT);
 }
