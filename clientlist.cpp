@@ -1,5 +1,5 @@
 #include "clientlist.h"
-
+#include "log.h"
 #include "connection.h"
 
 client_timer_list::client_timer_list() : head(nullptr), tail(nullptr) {}
@@ -14,12 +14,12 @@ client_timer_list::~client_timer_list() {
 }
 
 void client_timer_list::tick() {
+    time_t cur = time(nullptr);  // 获取当前系统时间
+
     if (!head) {
-        printf("empty list\n");
+        LOG_INFO("empty timer list, curtime: %ld", cur);
         return;
     }
-
-    time_t cur = time(nullptr);  // 获取当前系统时间
 
     client_timer* tmp = head;
     while (tmp) {
@@ -31,9 +31,8 @@ void client_timer_list::tick() {
         head = tmp->next;//更新头节点位置
 
         // 超时就先关闭连接，后删除相应定时器；
-        printf("find a timeout conn...\n");
+        LOG_INFO("find a timeout connection, which sockfd is %d", tmp->http_conn->sockfd);
         tmp->http_conn->close_sock();
-        printf("kill a timeout conn...\n");
         
         // 执行完定时器中的定时任务之后，就将它从链表中删除，并重置链表头节点
         head = tmp->next;
@@ -54,7 +53,6 @@ void client_timer_list::del_timer_from_list(client_timer* timer) {
         delete timer;
         head = nullptr;
         tail = nullptr;
-        // printf("目前服务器无连接...\n");
         return;
     }
     /* 

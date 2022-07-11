@@ -65,7 +65,7 @@ void print_client_info(sockaddr_in client_address) {
     char clientIp[16] = {0};
     inet_ntop(AF_INET, &client_address.sin_addr.s_addr, clientIp, sizeof(clientIp));
     unsigned short clientPort = ntohs(client_address.sin_port);
-    printf("client ip is %s, port is %d\n", clientIp, clientPort);
+    LOG_INFO("new connection: client ip is %s, port is %d", clientIp, clientPort);
 }
 
 // 定时信号处理函数

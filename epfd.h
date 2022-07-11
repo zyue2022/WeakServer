@@ -19,6 +19,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include "log.h"
 #include "threadpool.h"
 
 extern int TIMESLOT;  //定时器触发时间

@@ -1,5 +1,6 @@
 #include "clientlist.h"
 #include "connection.h"
+#include "log.h"
 #include "timer.h"
 
 // 开启epoll事件细分
@@ -20,8 +21,12 @@ int main(int argc, char* argv[]) {
         exit(-1);
     }
 
-    // 忽略SIGPIPE信号
+    Log::get_instance()->init("ServerLog", 2000, 800000, 8);
+
+    // 忽略SIGPIPE、SIGTERM信号
     addsig(SIGPIPE, SIG_IGN);
+    addsig(SIGTERM, SIG_IGN);
+
     // 捕捉信号,防止进程默认终止
     addsig(SIGALRM, alrm_handler);
 
@@ -68,7 +73,8 @@ int main(int argc, char* argv[]) {
 
     // 创建一个数组用于保存所有http客户端信息
     connection* connections = new connection[MAX_FD];
-    connection::epollfd     = epollfd;
+
+    connection::epollfd = epollfd;
 
     // 创建一个定时器链表用于保存所有http客户端连接是否超时的信息
     connection::timer_list = new client_timer_list();
@@ -89,7 +95,7 @@ int main(int argc, char* argv[]) {
         int num = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);  // -1是阻塞
 
         if (num == -1 && errno != EINTR) {
-            printf("epoll failed...\n");
+            LOG_ERROR("epoll failed");
             break;
         }
 
@@ -118,7 +124,7 @@ int main(int argc, char* argv[]) {
                 // 接受新连接
                 int cfd = accept(listenfd, (sockaddr*)&client_address, &client_addr_size);
                 if (cfd < 0) {
-                    printf("errno is: %d\n", errno);
+                    LOG_ERROR("accept error, errno is: %d", errno);
                     continue;
                 }
 
@@ -139,7 +145,7 @@ int main(int argc, char* argv[]) {
 
             } else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                 // 对方异常断开或挂起、错误等事件
-                printf("close because opposite close or hup or wrong...\n");
+                LOG_INFO("opposite close or hup or wrong, which sockfd is %d", sockfd);
                 connections[sockfd].close_conn();
 
             } else if (events[i].events & EPOLLIN) {
@@ -148,14 +154,14 @@ int main(int argc, char* argv[]) {
                     connections[sockfd].update_timer();
                     thread_pool->append(connections + sockfd);
                 } else {
-                    printf("close becuse read wrong...\n");
+                    LOG_ERROR("read wrong, which sockfd is %d", sockfd);
                     connections[sockfd].close_conn();
                 }
 
             } else if (events[i].events & EPOLLOUT) {
                 // 写数据，并判断是否成功
                 if (!connections[sockfd].write()) {
-                    printf("close becuse write wrong...\n");
+                    LOG_ERROR("write wrong, which sockfd is %d", sockfd);
                     connections[sockfd].close_conn();
                 } else {
                     // 也可以不更新
@@ -168,7 +174,7 @@ int main(int argc, char* argv[]) {
             但这样做将导致定时任务不能精准的按照预定的时间执行。
         */
         if (timeout) {
-            printf("curtime: %ld , 触发5s定时器...\n", time(nullptr));
+            LOG_INFO("触发5s定时器, curtime: %ld, 开始检测非活跃连接", time(nullptr));
             // 定时处理任务，实际上就是调用tick()函数
             connection::timer_list->tick();
             // 因为一次 alarm 调用只会引起一次SIGALARM 信号，所以我们要重新定时，以不断触发 SIGALARM信号。

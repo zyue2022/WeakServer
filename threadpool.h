@@ -9,6 +9,7 @@
 
 #include "locker.h"
 #include "sem.h"
+#include "log.h"
 
 /*
     int             num_of_thread;         :    线程数量
@@ -56,9 +57,9 @@ threadpool<T>::threadpool(int num, int max)
 
     // 创建线程，并设置线程分离方便回收
     for (int i = 0; i < num_of_thread; ++i) {
-        printf("正在创建第 %d 个线程...\n", i);
         // worker必须是静态函数,传入this参数
         int ret = pthread_create(i + threads, nullptr, worker, this);
+        LOG_INFO("正在创建第 %d 个线程, 线程号: %ld", i, threads[i]);
         if (ret != 0) {
             delete[] threads;
             throw std::exception();
@@ -107,6 +108,7 @@ void threadpool<T>::run() {
         queuestat.wait();  // 信号量的P操作
         queuelocker.lock();
 
+        // 防止虚假唤醒
         if (workqueue.empty()) {
             queuelocker.unlock();
             continue;

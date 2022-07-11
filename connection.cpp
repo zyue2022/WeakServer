@@ -1,6 +1,7 @@
 #include "connection.h"
 
 #include "clientlist.h"
+#include "log.h"
 #include "timer.h"
 
 // 定义HTTP响应的一些状态信息
@@ -26,12 +27,13 @@ connection::connection() : sockfd(-1), timer(nullptr) {}
 connection::~connection() {}
 
 void connection::init_conn() {
+    LOG_INFO("accept a new connection, which sockfd is %d", sockfd);
     init_timer();
     print_client_info(client_address);
     add_fd_to_epoll(epollfd, sockfd, true, true);
     init_parse();
     ++user_count;
-    printf("after init, we have %d conn in all now...\n", user_count);
+    LOG_INFO("after init, we have %d connection in all now", user_count);
 }
 
 void connection::init_timer() {
@@ -41,6 +43,7 @@ void connection::init_timer() {
 
 void connection::update_timer() {
     timer->renew_expire_time();
+    LOG_INFO("update timer, which sockfd is %d", sockfd);
     timer_list->adjust_timer_on_list(timer);
 }
 
@@ -73,10 +76,11 @@ void connection::init_parse() {
 
 void connection::close_sock() {
     if (sockfd == -1) return;
+    LOG_INFO("close a connection, which sockfd is %d", sockfd);
     remove_fd_from_epoll(epollfd, sockfd);
     sockfd = -1;
     --user_count;
-    printf("after close, there have %d conn in all...\n", user_count);
+    LOG_INFO("after close, there have %d conn in all", user_count);
 }
 
 void connection::close_conn() {
@@ -105,7 +109,7 @@ bool connection::read() {
         }
         read_idx += bytes_of_read;
     }
-    //printf("接收到数据：\n%s\n", read_buf);
+    //LOG_INFO("\n接收到请求:\n%s", read_buf);
     return true;
 }
 
@@ -175,7 +179,6 @@ HTTP_CODE connection::parse_http_request(char* text) {
         http://192.168.110.129:10000/index.html
     */
     if (strncasecmp(url, "http://", 7) == 0) {
-        printf("url = %s\n", url);
         url += 7;
         // 在参数 str 所指向的字符串中搜索第一次出现字符 c（一个无符号字符）的位置。
         url = strchr(url, '/');
@@ -183,7 +186,7 @@ HTTP_CODE connection::parse_http_request(char* text) {
     if (!url || url[0] != '/') {
         return BAD_REQUEST;
     }
-    //printf("url = %s\n", url);
+    LOG_INFO("connection %d request file: %s", sockfd, url);
     check_state = CHECK_STATE_HEADER;  // 检查状态变成检查头
     return NO_REQUEST;
 }
@@ -218,7 +221,7 @@ HTTP_CODE connection::parse_http_header(char* text) {
         text += strspn(text, " \t");
         host = text;
     } else {
-        //printf("unknow header %s\n", text);
+        LOG_INFO("unknow header %s, which sockfd is %d", text, sockfd);
     }
     return NO_REQUEST;
 }
@@ -487,7 +490,7 @@ void connection::process() {
     // 生成响应
     bool write_ret = reply_http(read_ret);
     if (!write_ret) {
-        printf("close because response failed...\n");
+        LOG_ERROR("response failed, which sockfd is %d", sockfd);
         close_conn();
         return;
     }
