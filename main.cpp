@@ -21,7 +21,8 @@ int main(int argc, char* argv[]) {
         exit(-1);
     }
 
-    Log::get_instance()->init("ServerLog", 2000, 800000, 8);
+    // 初始化日志模块
+    Log::get_instance()->init("ServerLog", 2048, 10000, 8);
 
     // 忽略SIGPIPE、SIGTERM信号
     addsig(SIGPIPE, SIG_IGN);
