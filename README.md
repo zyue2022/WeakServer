@@ -2,6 +2,8 @@
 
 linux系统上的并发服务器
 
+> 新版见：[LightWebServer](https://github.com/zyue2022/LightWebServer)
+
 ### 使用
 编译：`g++ *.cpp -o app -pthread -Wall` 
 
@@ -19,6 +21,8 @@ linux系统上的并发服务器
 ### 参考内容
 - 游双 **《linux高性能服务器编程》**
 - 牛客网C++视频课程中项目
+
+---
 
 本项目基本就是按照书上内容来的，后序还可以：
 - 添加MySQL数据库实现网页注册登录的功能；
